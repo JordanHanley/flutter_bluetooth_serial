@@ -78,14 +78,20 @@ public abstract class BluetoothConnection
         long t = System.currentTimeMillis();
         long end = t + timeout*1000;
         while(System.currentTimeMillis() < end) {
-            socket = serverSocket.accept();
+            try {
+                socket = serverSocket.accept();
+            } catch (IOException ex) {
+                serverSocket.close();
+                throw ex;
+            }
         }
+
+        serverSocket.close();
 
         if(socket == null) {
             throw new IOException("socket connection not established");
         }
 
-        serverSocket.close();
         connectionThread = new ConnectionThread(socket);
         connectionThread.start();
     }
