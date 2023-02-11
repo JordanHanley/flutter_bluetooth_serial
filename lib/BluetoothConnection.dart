@@ -63,6 +63,17 @@ class BluetoothConnection {
         .invokeMethod('connect', {"address": address}));
   }
 
+  /// Returns connection of connected device
+  ///
+  /// Throws exception if no connection was made
+  static Future<BluetoothConnection> listenForConnections
+      (String? sdpName, int? timeout) async {
+    return BluetoothConnection._consumeConnectionID(await FlutterBluetoothSerial
+        ._methodChannel
+        .invokeMethod
+      ('listenForConnections', {"sdpName": sdpName, "timeout": timeout}));
+  }
+
   /// Should be called to make sure the connection is closed and resources are freed (sockets/channels).
   void dispose() {
     finish();

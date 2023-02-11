@@ -1014,6 +1014,49 @@ public class FlutterBluetoothSerialPlugin implements FlutterPlugin, ActivityAwar
                     break;
                 }
 
+                case "listenForConnections": {
+                    if (!call.hasArgument("sdpName")) {
+                        result.error("invalid_argument", "argument 'sdpName' not found", null);
+                        break;
+                    }
+
+                    if (!call.hasArgument("timeout")) {
+                        result.error("invalid_argument", "argument 'timeout' not found", null);
+                        break;
+                    }
+
+                    String sdpName;
+                    try {
+                        sdpName = call.argument("sdpName");
+                    } catch (ClassCastException ex) {
+                        result.error("invalid_argument", "'sdpName' argument is required to be a String", null);
+                        break;
+                    }
+
+                    int timeout;
+                    try {
+                        timeout = call.argument("timeout");
+                    } catch (ClassCastException ex) {
+                        result.error("invalid_argument", "'timeout' argument is required to be a int", null);
+                        break;
+                    }
+
+                    int id = ++lastConnectionId;
+                    BluetoothConnectionWrapper connection = new BluetoothConnectionWrapper(id, bluetoothAdapter);
+                    connections.put(id, connection);
+
+                    AsyncTask.execute(() -> {
+                        try {
+                            connection.listenForConnections(sdpName, timeout);
+                            activity.runOnUiThread(() -> result.success(id));
+                        } catch (Exception ex) {
+                            activity.runOnUiThread(() -> result.error("listening_connect_error", ex.getMessage(), exceptionToString(ex)));
+                            connections.remove(id);
+                        }
+                    });
+                    break;
+                }
+
                 case "write": {
                     if (!call.hasArgument("id")) {
                         result.error("invalid_argument", "argument 'id' not found", null);

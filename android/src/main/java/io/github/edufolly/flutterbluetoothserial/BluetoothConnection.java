@@ -8,6 +8,7 @@ import java.util.Arrays;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 
 /// Universal Bluetooth serial connection class (for Java)
@@ -59,6 +60,36 @@ public abstract class BluetoothConnection
         connectionThread = new ConnectionThread(socket);
         connectionThread.start();
     }
+
+    /// Accepts an incoming connection
+    public void listenForConnections(String sdpName, int timeout) throws IOException {
+        if (isConnected()) {
+            throw new IOException("already connected");
+        }
+
+        BluetoothServerSocket serverSocket = bluetoothAdapter
+                .listenUsingRfcommWithServiceRecord(sdpName, DEFAULT_UUID);
+        if (serverSocket == null) {
+            throw new IOException("socket server could not established");
+        }
+
+        BluetoothSocket socket = null;
+
+        long t = System.currentTimeMillis();
+        long end = t + timeout*1000;
+        while(System.currentTimeMillis() < end) {
+            socket = serverSocket.accept();
+        }
+
+        if(socket == null) {
+            throw new IOException("socket connection not established");
+        }
+
+        serverSocket.close();
+        connectionThread = new ConnectionThread(socket);
+        connectionThread.start();
+    }
+
     /// Connects to given device by hardware address (default UUID used)
     public void connect(String address) throws IOException {
         connect(address, DEFAULT_UUID);
