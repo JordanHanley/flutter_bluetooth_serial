@@ -75,15 +75,11 @@ public abstract class BluetoothConnection
 
         BluetoothSocket socket = null;
 
-        long t = System.currentTimeMillis();
-        long end = t + timeout*1000;
-        while(System.currentTimeMillis() < end) {
-            try {
-                socket = serverSocket.accept();
-            } catch (IOException ex) {
-                serverSocket.close();
-                throw ex;
-            }
+        try {
+            socket = serverSocket.accept(timeout);
+        } catch (IOException ex) {
+            serverSocket.close();
+            throw ex;
         }
 
         serverSocket.close();
