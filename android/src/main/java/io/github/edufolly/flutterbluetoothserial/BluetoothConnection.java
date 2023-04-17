@@ -12,8 +12,7 @@ import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 
 /// Universal Bluetooth serial connection class (for Java)
-public abstract class BluetoothConnection
-{
+public abstract class BluetoothConnection {
     protected static final UUID DEFAULT_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
     protected BluetoothAdapter bluetoothAdapter;
@@ -25,11 +24,9 @@ public abstract class BluetoothConnection
     }
 
 
-
     public BluetoothConnection(BluetoothAdapter bluetoothAdapter) {
         this.bluetoothAdapter = bluetoothAdapter;
     }
-
 
 
     // @TODO . `connect` could be done perfored on the other thread
@@ -57,7 +54,7 @@ public abstract class BluetoothConnection
 
         socket.connect();
 
-        connectionThread = new ConnectionThread(socket);
+        connectionThread = new ConnectionThread(socket, false, null, address);
         connectionThread.start();
     }
 
@@ -84,11 +81,11 @@ public abstract class BluetoothConnection
 
         serverSocket.close();
 
-        if(socket == null) {
+        if (socket == null) {
             throw new IOException("socket connection not established");
         }
 
-        connectionThread = new ConnectionThread(socket);
+        connectionThread = new ConnectionThread(socket, true, sdpName, null);
         connectionThread.start();
     }
 
@@ -96,7 +93,7 @@ public abstract class BluetoothConnection
     public void connect(String address) throws IOException {
         connect(address, DEFAULT_UUID);
     }
-    
+
     /// Disconnects current session (ignore if not connected)
     public void disconnect() {
         if (isConnected()) {
@@ -121,14 +118,29 @@ public abstract class BluetoothConnection
     protected abstract void onDisconnected(boolean byRemote);
 
     /// Thread to handle connection I/O
-    private class ConnectionThread extends Thread  {
-        private final BluetoothSocket socket;
+    private class ConnectionThread extends Thread {
+        private static final int RECONNECT_SERVER_TIMEOUT = 20000;
+        private static final int RECONNECT_SERVER_NUM_TRIES = 3;
+        private static final int RECONNECT_CLIENT_NUM_TRIES = 10;
+        private static final int RECONNECT_ATTEMPT_DELAY = 5000;
+
+        private BluetoothSocket socket;
+        // Need this to determine reconnect strategy if dc event occurs.
+        private final boolean isListeningConnection;
         private final InputStream input;
         private final OutputStream output;
         private boolean requestedClosing = false;
-        
-        ConnectionThread(BluetoothSocket socket) {
+        // sdpName if this was a listening connection
+        private final String sdpName;
+        // address if this was a client connection
+        private final String address;
+
+        ConnectionThread(BluetoothSocket socket, boolean isListeningConnection, String sdpName,
+                         String address) {
             this.socket = socket;
+            this.isListeningConnection = isListeningConnection;
+            this.sdpName = sdpName;
+            this.address = address;
             InputStream tmpIn = null;
             OutputStream tmpOut = null;
 
@@ -154,8 +166,83 @@ public abstract class BluetoothConnection
 
                     onRead(Arrays.copyOf(buffer, bytes));
                 } catch (IOException e) {
-                    // `input.read` throws when closed by remote device
-                    break;
+                    if (isListeningConnection) {
+                        BluetoothSocket newSocket = null;
+                        BluetoothServerSocket serverSocket = null;
+                        int retryCount = RECONNECT_SERVER_NUM_TRIES;
+                        while (newSocket == null && retryCount > 0) {
+                            retryCount--;
+                            try {
+                                serverSocket = bluetoothAdapter
+                                        .listenUsingRfcommWithServiceRecord(sdpName, DEFAULT_UUID);
+                                newSocket = serverSocket.accept(RECONNECT_SERVER_TIMEOUT);
+                            } catch (IOException exception) {
+                                if(serverSocket != null) {
+                                    try {
+                                        serverSocket.close();
+                                    } catch (IOException ex) {
+                                        ex.printStackTrace();
+                                    }
+                                }
+                            }
+                        }
+                        if(newSocket != null) {
+                            try {
+                                this.socket.close();
+                            } catch (IOException ex) {
+                                ex.printStackTrace();
+                            }
+                            this.socket = newSocket;
+                            if(serverSocket != null) {
+                                try {
+                                    serverSocket.close();
+                                } catch (IOException ex) {
+                                    ex.printStackTrace();
+                                }
+                            }
+                            // If connection couldn't be reestablished end the connection
+                        } else {
+                            break;
+                        }
+                        // if client connection
+                    } else {
+                        BluetoothSocket newSocket = null;
+                        int retryCount = RECONNECT_CLIENT_NUM_TRIES;
+                        BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
+                        while (newSocket == null && retryCount > 0) {
+                            retryCount--;
+                            try {
+                                newSocket = device.createRfcommSocketToServiceRecord(DEFAULT_UUID);
+                                if(newSocket == null) {
+                                    continue;
+                                }
+                                newSocket.connect();
+                            } catch (IOException ex) {
+                                if(newSocket != null) {
+                                    try {
+                                        newSocket.close();
+                                    } catch (IOException exc) {
+                                        newSocket = null;
+                                    }
+                                }
+                            }
+                            try {
+                                Thread.sleep(RECONNECT_ATTEMPT_DELAY);
+                            } catch (InterruptedException ex) {
+                                ex.printStackTrace();
+                            }
+                        }
+                        if(newSocket != null) {
+                            try {
+                                this.socket.close();
+                            } catch (IOException ex) {
+                                ex.printStackTrace();
+                            }
+                            this.socket = newSocket;
+                        } else {
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -163,16 +250,16 @@ public abstract class BluetoothConnection
             if (output != null) {
                 try {
                     output.close();
+                } catch (Exception e) {
                 }
-                catch (Exception e) {}
             }
 
             // Make sure input stream is closed
             if (input != null) {
                 try {
                     input.close();
+                } catch (Exception e) {
                 }
-                catch (Exception e) {}
             }
 
             // Callback on disconnected, with information which side is closing
@@ -201,8 +288,8 @@ public abstract class BluetoothConnection
             // Flush output buffers befoce closing
             try {
                 output.flush();
+            } catch (Exception e) {
             }
-            catch (Exception e) {}
 
             // Close the connection socket
             if (socket != null) {
@@ -211,8 +298,8 @@ public abstract class BluetoothConnection
                     Thread.sleep(111);
 
                     socket.close();
+                } catch (Exception e) {
                 }
-                catch (Exception e) {}
             }
         }
     }
